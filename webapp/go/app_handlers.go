@@ -593,23 +593,12 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := requestPaymentGatewayPostPayment(ctx, paymentGatewayURL, paymentToken.Token, paymentGatewayRequest, func() ([]Ride, error) {
-		rides := []Ride{}
-		if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE user_id = ? ORDER BY created_at ASC`, ride.UserID); err != nil {
-			return nil, err
-		}
-		return rides, nil
-	}); err != nil {
-		if errors.Is(err, erroredUpstream) {
-			writeError(w, http.StatusBadGateway, err)
-			return
-		}
+	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+	if err := paySync(paymentGatewayURL, paymentToken.Token, rideID, paymentGatewayRequest); err != nil {
+		writeError(w, http.StatusBadGateway, err)
 		return
 	}
 	publishRide(ctx, rideID, "COMPLETED", true, true)

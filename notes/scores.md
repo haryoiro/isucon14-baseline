@@ -21,3 +21,7 @@
 | 21:35 | 123204 | false | マッチング: 全ペアを到着時間でソートして貪欲 |
 | 21:36 | 211774 | false | マッチング: 5秒以上待ちは FIFO 最寄り優先 + 残りは全ペア貪欲 |
 | 21:38 | 247650 | true | nearby に MATCHING 中の椅子も含める（実験） |
+| 21:39 | 250184 | true | urgentWait 3s |
+| 21:41 | 238145 | true | 同上（access log 計測） |
+| 21:42 | 145 | false | 決済を非同期化（Idempotency-Key でリトライ） |
+| 21:44 | 388436 | true | 決済: commit 後に同期実行・Idempotency-Key・keepalive client |

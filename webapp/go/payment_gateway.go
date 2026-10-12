@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -94,4 +96,43 @@ func requestPaymentGatewayPostPayment(ctx context.Context, paymentGatewayURL str
 	}
 
 	return nil
+}
+
+var paymentClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        500,
+		MaxIdleConnsPerHost: 500,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
+
+func paySync(paymentGatewayURL, token, rideID string, param *paymentGatewayPostPaymentRequest) error {
+	b, err := json.Marshal(param)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < 1000; i++ {
+		req, err := http.NewRequest(http.MethodPost, paymentGatewayURL+"/payments", bytes.NewBuffer(b))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Idempotency-Key", rideID)
+		res, err := paymentClient.Do(req)
+		if err == nil {
+			io.Copy(io.Discard, res.Body)
+			res.Body.Close()
+			if res.StatusCode == http.StatusNoContent {
+				return nil
+			}
+			if res.StatusCode == http.StatusBadRequest || res.StatusCode == http.StatusUnprocessableEntity {
+				slog.Error("payment failed", "status", res.StatusCode, "ride", rideID)
+				return fmt.Errorf("payment failed: %d", res.StatusCode)
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return errors.New("payment retry exceeded")
 }

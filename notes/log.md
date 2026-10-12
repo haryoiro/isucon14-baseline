@@ -9,3 +9,4 @@
 - 21:32 app を isu3 に移動（isu1=nginx, isu2=MySQL, isu3=app）。isu1 の nginx+app で CPU が張り付いていたため → 217710（CPU はどこも余裕あり＝ゲーム側の律速）
 - 21:35 マッチングを全ペア貪欲にすると乗車地点・移動の不満は激減したが古いライドが飢えて fail(CODE=32)。5秒以上待ちを FIFO 優先にするハイブリッドへ
 - 21:38 nearby の CODE=31（椅子が足りない）は、ベンチが「MATCHING 中（未受理）の椅子」を空きとして扱っているためと判明。nearby に含める → 247650
+- 21:44 決済を commit 後に同期実行（Idempotency-Key=ride_id でリトライ、keepalive 付き専用 http.Client）。非同期にすると CODE=34 で fail したので同期のまま → 388436

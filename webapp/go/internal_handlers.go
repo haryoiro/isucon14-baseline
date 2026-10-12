@@ -20,7 +20,7 @@ type matchRide struct {
 
 var matchMu sync.Mutex
 
-const urgentWait = 5 * time.Second
+const urgentWait = 3 * time.Second
 
 func startMatcher() {
 	go func() {
