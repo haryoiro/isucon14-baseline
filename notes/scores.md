@@ -61,3 +61,5 @@
 | 22:41 | 417464 | false | TLS 分散（ローカルは unix socket） |
 | 22:43 | 574236 | true | isu1=L4 振り分けのみ、TLS 終端は isu2/isu3 の nginx |
 | 22:44 | 584705 | true | 同上（再計測） |
+| 22:46 | 666201 | true | isu1 TLS 終端に戻す（access log off） |
+| 22:47 | 681384 | true | マッチング間隔 50ms |

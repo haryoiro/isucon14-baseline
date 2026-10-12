@@ -28,7 +28,7 @@ const urgentWait = 3 * time.Second
 func startMatcher() {
 	go func() {
 		for {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 			if err := runMatching(context.Background()); err != nil {
 				slog.Error("matching", "err", err)
 			}
