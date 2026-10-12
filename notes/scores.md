@@ -68,3 +68,4 @@
 | 22:51 | 631589 | true | urgentWait 2s |
 | 22:53 | 624382 | true | nginx KTLS |
 | 22:57 | 678082 | true | 再起動後（早期確認） |
+| 22:59 | 656977 | true | nearby/rides の大きいレスポンスをアプリで gzip |

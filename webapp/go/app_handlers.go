@@ -299,7 +299,7 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, &getAppRidesResponse{
+	writeJSONGzip(w, r, http.StatusOK, &getAppRidesResponse{
 		Rides: items,
 	})
 }
@@ -720,7 +720,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	stMu.Unlock()
 	retrievedAt := time.Now()
 
-	writeJSON(w, http.StatusOK, &appGetNearbyChairsResponse{
+	writeJSONGzip(w, r, http.StatusOK, &appGetNearbyChairsResponse{
 		Chairs:      nearbyChairs,
 		RetrievedAt: retrievedAt.UnixMilli(),
 	})

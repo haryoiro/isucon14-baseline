@@ -1,21 +1,24 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/exec"
 	"os/signal"
-	"sync"
-	"time"
-	_ "net/http/pprof"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -234,4 +237,32 @@ func secureRandomStr(b int) string {
 		panic(err)
 	}
 	return fmt.Sprintf("%x", k)
+}
+
+var gzipPool = sync.Pool{New: func() any {
+	zw, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+	return zw
+}}
+
+// 大きいレスポンスだけ gzip で返す（isu1 の nginx の TLS 負荷を減らす）
+func writeJSONGzip(w http.ResponseWriter, r *http.Request, statusCode int, v interface{}) {
+	buf, err := json.Marshal(v)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	if len(buf) < 1024 || !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		w.WriteHeader(statusCode)
+		w.Write(buf)
+		return
+	}
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Set("Vary", "Accept-Encoding")
+	w.WriteHeader(statusCode)
+	zw := gzipPool.Get().(*gzip.Writer)
+	zw.Reset(w)
+	zw.Write(buf)
+	zw.Close()
+	gzipPool.Put(zw)
 }
