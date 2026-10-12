@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 )
@@ -13,10 +14,13 @@ type matchRide struct {
 	PickLat int    `db:"pickup_latitude"`
 	PickLon int    `db:"pickup_longitude"`
 	DestLat int    `db:"destination_latitude"`
-	DestLon int    `db:"destination_longitude"`
+	DestLon   int       `db:"destination_longitude"`
+	CreatedAt time.Time `db:"created_at"`
 }
 
 var matchMu sync.Mutex
+
+const urgentWait = 5 * time.Second
 
 func startMatcher() {
 	go func() {
@@ -42,7 +46,7 @@ func runMatching(ctx context.Context) error {
 	matchMu.Lock()
 	defer matchMu.Unlock()
 	rides := []matchRide{}
-	if err := db.SelectContext(ctx, &rides, `SELECT id, pickup_latitude, pickup_longitude, destination_latitude, destination_longitude FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
+	if err := db.SelectContext(ctx, &rides, `SELECT id, pickup_latitude, pickup_longitude, destination_latitude, destination_longitude, created_at FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
 		return err
 	}
 	if len(rides) == 0 {
@@ -60,25 +64,55 @@ func runMatching(ctx context.Context) error {
 			free = append(free, c)
 		}
 	}
-	for _, ride := range rides {
+	type pair struct {
+		r, c  int
+		score float64
+	}
+	pairs := make([]pair, 0, len(rides)*len(free))
+	for ri, ride := range rides {
+		for ci, c := range free {
+			d := calculateDistance(c.Lat, c.Lon, ride.PickLat, ride.PickLon)
+			pairs = append(pairs, pair{ri, ci, float64(d) / float64(max(c.Speed, 1))})
+		}
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].score < pairs[j].score })
+	rideUsed := make([]bool, len(rides))
+	chairUsed := make([]bool, len(free))
+	now := time.Now()
+	// 長く待っているライドは古い順に最寄りの椅子を割り当てる
+	for ri, ride := range rides {
+		if now.Sub(ride.CreatedAt) < urgentWait {
+			break
+		}
 		best := -1
 		bestScore := 0.0
-		for i, c := range free {
-			if c == nil {
+		for ci, c := range free {
+			if chairUsed[ci] {
 				continue
 			}
 			d := calculateDistance(c.Lat, c.Lon, ride.PickLat, ride.PickLon)
 			score := float64(d) / float64(max(c.Speed, 1))
 			if best < 0 || score < bestScore {
-				best = i
-				bestScore = score
+				best, bestScore = ci, score
 			}
 		}
 		if best < 0 {
 			break
 		}
+		rideUsed[ri], chairUsed[best] = true, true
 		c := free[best]
-		free[best] = nil
+		c.RideID = ride.ID
+		c.RideStatus = "MATCHING"
+		c.PickLat, c.PickLon, c.DestLat, c.DestLon = ride.PickLat, ride.PickLon, ride.DestLat, ride.DestLon
+		assigns = append(assigns, assign{ride, c})
+	}
+	for _, p := range pairs {
+		if rideUsed[p.r] || chairUsed[p.c] {
+			continue
+		}
+		rideUsed[p.r], chairUsed[p.c] = true, true
+		ride := rides[p.r]
+		c := free[p.c]
 		c.RideID = ride.ID
 		c.RideStatus = "MATCHING"
 		c.PickLat, c.PickLon, c.DestLat, c.DestLon = ride.PickLat, ride.PickLon, ride.DestLat, ride.DestLon

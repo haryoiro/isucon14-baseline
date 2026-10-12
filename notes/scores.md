@@ -17,3 +17,7 @@
 | 21:28 | 173554 | true | nearby で解放直後1秒の椅子を除外 (slowlog) |
 | 21:30 | 211801 | true | nearby: retrieved_at をスナップショット後に・椅子解放を評価レスポンス送信後に |
 | 21:32 | 217710 | true | app を isu3 に移動（isu1=nginx, isu2=DB, isu3=app）、TLS session cache |
+| 21:33 | 209512 | true | 同上（CPU 観測） |
+| 21:35 | 123204 | false | マッチング: 全ペアを到着時間でソートして貪欲 |
+| 21:36 | 211774 | false | マッチング: 5秒以上待ちは FIFO 最寄り優先 + 残りは全ペア貪欲 |
+| 21:38 | 247650 | true | nearby に MATCHING 中の椅子も含める（実験） |

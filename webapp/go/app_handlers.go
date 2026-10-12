@@ -721,7 +721,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
 	stMu.Lock()
 	for _, c := range chairStates {
-		if !c.Active || c.RideID != "" || !c.HasLoc {
+		if !c.Active || (c.RideID != "" && c.RideStatus != "MATCHING") || !c.HasLoc {
 			continue
 		}
 		if calculateDistance(coordinate.Latitude, coordinate.Longitude, c.Lat, c.Lon) <= distance {
