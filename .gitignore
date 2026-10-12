@@ -3,3 +3,5 @@ BENCH.md
 infra/.terraform/
 infra/*.tfstate*
 infra/terraform.tfvars
+isuride
+notes/bench/
