@@ -541,61 +541,19 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
-
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, errors.New("ride not found"))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	status, err := getLatestRideStatus(ctx, tx, ride.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	if status != "ARRIVED" {
-		writeError(w, http.StatusBadRequest, errors.New("not arrived yet"))
-		return
-	}
-
-	result, err := tx.ExecContext(
-		ctx,
-		`UPDATE rides SET evaluation = ? WHERE id = ?`,
-		req.Evaluation, rideID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if count, err := result.RowsAffected(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	} else if count == 0 {
+	ri, ok := getRideInfo(rideID)
+	if !ok {
 		writeError(w, http.StatusNotFound, errors.New("ride not found"))
 		return
 	}
-
-
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, errors.New("ride not found"))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
+	if ri.Status != "ARRIVED" {
+		writeError(w, http.StatusBadRequest, errors.New("not arrived yet"))
 		return
 	}
+	ride := ri.Ride
 
-	paymentToken := &PaymentToken{}
-	if err := tx.GetContext(ctx, paymentToken, `SELECT * FROM payment_tokens WHERE user_id = ?`, ride.UserID); err != nil {
+	token, err := getPaymentToken(ctx, ride.UserID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusBadRequest, errors.New("payment token not registered"))
 			return
@@ -603,32 +561,26 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-
-	fare, err := calculateDiscountedFare(ctx, tx, ride.UserID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
+	paymentGatewayURL, err := getPaymentURL(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	paymentGatewayRequest := &paymentGatewayPostPaymentRequest{
-		Amount: fare,
-	}
-
-	var paymentGatewayURL string
-	if err := tx.GetContext(ctx, &paymentGatewayURL, "SELECT value FROM settings WHERE name = 'payment_gateway_url'"); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	if err := paySync(paymentGatewayURL, paymentToken.Token, rideID, paymentGatewayRequest); err != nil {
+	if err := paySync(paymentGatewayURL, token, rideID, &paymentGatewayPostPaymentRequest{Amount: ri.Fare}); err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	if err := tx.Commit(); err != nil {
+
+	now := time.Now().Truncate(time.Microsecond)
+	if _, err := db.ExecContext(ctx, `UPDATE rides SET evaluation = ?, updated_at = ? WHERE id = ?`, req.Evaluation, now, rideID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	ev := req.Evaluation
+	ride.Evaluation = &ev
+	ride.UpdatedAt = now
 	enqueueStatus(rideID, "COMPLETED")
-	cacheComplete(*ride)
+	cacheComplete(ride)
 	publishRide(ctx, rideID, "COMPLETED", true, true)
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
@@ -648,32 +600,43 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type appGetNotificationResponse struct {
-	Data         *appGetNotificationResponseData `json:"data"`
-	RetryAfterMs int                             `json:"retry_after_ms"`
+var (
+	paymentTokens sync.Map
+	paymentURLMu  sync.Mutex
+	paymentURL    string
+)
+
+func getPaymentToken(ctx context.Context, userID string) (string, error) {
+	if v, ok := paymentTokens.Load(userID); ok {
+		return v.(string), nil
+	}
+	pt := &PaymentToken{}
+	if err := db.GetContext(ctx, pt, `SELECT * FROM payment_tokens WHERE user_id = ?`, userID); err != nil {
+		return "", err
+	}
+	paymentTokens.Store(userID, pt.Token)
+	return pt.Token, nil
 }
 
-type appGetNotificationResponseData struct {
-	RideID                string                           `json:"ride_id"`
-	PickupCoordinate      Coordinate                       `json:"pickup_coordinate"`
-	DestinationCoordinate Coordinate                       `json:"destination_coordinate"`
-	Fare                  int                              `json:"fare"`
-	Status                string                           `json:"status"`
-	Chair                 *appGetNotificationResponseChair `json:"chair,omitempty"`
-	CreatedAt             int64                            `json:"created_at"`
-	UpdateAt              int64                            `json:"updated_at"`
+func getPaymentURL(ctx context.Context) (string, error) {
+	paymentURLMu.Lock()
+	defer paymentURLMu.Unlock()
+	if paymentURL != "" {
+		return paymentURL, nil
+	}
+	var u string
+	if err := db.GetContext(ctx, &u, "SELECT value FROM settings WHERE name = 'payment_gateway_url'"); err != nil {
+		return "", err
+	}
+	paymentURL = u
+	return u, nil
 }
 
-type appGetNotificationResponseChair struct {
-	ID    string                               `json:"id"`
-	Name  string                               `json:"name"`
-	Model string                               `json:"model"`
-	Stats appGetNotificationResponseChairStats `json:"stats"`
-}
-
-type appGetNotificationResponseChairStats struct {
-	TotalRidesCount    int     `json:"total_rides_count"`
-	TotalEvaluationAvg float64 `json:"total_evaluation_avg"`
+func resetPaymentCache() {
+	paymentURLMu.Lock()
+	paymentURL = ""
+	paymentURLMu.Unlock()
+	paymentTokens.Range(func(k, _ any) bool { paymentTokens.Delete(k); return true })
 }
 
 func getChairStats(ctx context.Context, tx executableGet, chairID string) (appGetNotificationResponseChairStats, error) {
@@ -810,3 +773,31 @@ func calculateDiscountedFare(ctx context.Context, tx executableGet, userID strin
 
 	return initialFare + discountedMeteredFare, nil
 }
+type appGetNotificationResponse struct {
+	Data         *appGetNotificationResponseData `json:"data"`
+	RetryAfterMs int                             `json:"retry_after_ms"`
+}
+
+type appGetNotificationResponseData struct {
+	RideID                string                           `json:"ride_id"`
+	PickupCoordinate      Coordinate                       `json:"pickup_coordinate"`
+	DestinationCoordinate Coordinate                       `json:"destination_coordinate"`
+	Fare                  int                              `json:"fare"`
+	Status                string                           `json:"status"`
+	Chair                 *appGetNotificationResponseChair `json:"chair,omitempty"`
+	CreatedAt             int64                            `json:"created_at"`
+	UpdateAt              int64                            `json:"updated_at"`
+}
+
+type appGetNotificationResponseChair struct {
+	ID    string                               `json:"id"`
+	Name  string                               `json:"name"`
+	Model string                               `json:"model"`
+	Stats appGetNotificationResponseChairStats `json:"stats"`
+}
+
+type appGetNotificationResponseChairStats struct {
+	TotalRidesCount    int     `json:"total_rides_count"`
+	TotalEvaluationAvg float64 `json:"total_evaluation_avg"`
+}
+

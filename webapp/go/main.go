@@ -181,6 +181,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clearCaches()
+	resetPaymentCache()
 	if err := loadState(ctx); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
