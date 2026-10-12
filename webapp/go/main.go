@@ -47,7 +47,7 @@ func main() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 		<-sig
-		flushLocations()
+		flushLocations(true)
 		os.Exit(0)
 	}()
 	slog.Info("Listening on :8080")

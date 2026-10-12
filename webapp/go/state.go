@@ -161,24 +161,27 @@ func flushStatuses(ctx context.Context, buf []statusRow) {
 
 func startFlusher() {
 	go func() {
-		for {
+		for i := 1; ; i++ {
 			time.Sleep(50 * time.Millisecond)
-			flushLocations()
+			flushLocations(i%20 == 0)
 		}
 	}()
 }
 
 var flushMu sync.Mutex
 
-func flushLocations() {
+func flushLocations(withTotals bool) {
 	flushMu.Lock()
 	defer flushMu.Unlock()
 	locBufMu.Lock()
-	d := dirty
+	var d map[string]struct{}
+	if withTotals {
+		d = dirty
+		dirty = map[string]struct{}{}
+	}
 	sbuf := statusBuf
 	locBuf = nil
 	statusBuf = nil
-	dirty = map[string]struct{}{}
 	locBufMu.Unlock()
 	ctx := context.Background()
 	if len(sbuf) > 0 {

@@ -74,3 +74,5 @@
 | 23:03 | 724977 | true | nginx multi_accept・cpu_affinity・ssl_buffer_size 4k |
 | 23:05 | 702265 | true | 同上（再計測） |
 | 23:06 | 815316 | true | HTTP/2 有効化（実験） |
+| 23:07 | 778199 | true | 同上（CPU 観測） |
+| 23:09 | 751477 | true | chair_totals の書き込みを 1 秒ごとに |
