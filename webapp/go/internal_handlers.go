@@ -34,8 +34,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	if err := db.SelectContext(ctx, &chairs, `SELECT c.id, m.speed, t.latitude, t.longitude
 		FROM chairs c JOIN chair_models m ON m.name = c.model JOIN chair_totals t ON t.chair_id = c.id
 		WHERE c.is_active = TRUE AND NOT EXISTS (
-			SELECT 1 FROM rides r WHERE r.chair_id = c.id AND NOT EXISTS (
-				SELECT 1 FROM ride_statuses rs WHERE rs.ride_id = r.id AND rs.status = 'COMPLETED' AND rs.chair_sent_at IS NOT NULL))`); err != nil {
+			SELECT 1 FROM rides r WHERE r.chair_id = c.id AND r.evaluation IS NULL)`); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -45,6 +44,9 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		bestScore := 0.0
 		for i, c := range chairs {
 			if used[i] {
+				continue
+			}
+			if _, ok := pendingComplete.Load(c.ID); ok {
 				continue
 			}
 			d := calculateDistance(c.Latitude, c.Longitude, ride.Latitude, ride.Longitude)
@@ -64,6 +66,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		}
 		if n, _ := res.RowsAffected(); n == 1 {
 			used[best] = true
+			publishRide(ctx, ride.ID, "MATCHING", false, true)
 		}
 	}
 

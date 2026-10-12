@@ -4,3 +4,4 @@
 - 21:03 初期ベンチ 1232。コードを手元に取り込み、deploy/bench スクリプトを作成
 - 21:06 インデックス追加、chair_totals テーブル（総走行距離・最新位置）、getChairStats を集約1クエリ化、nearby を1クエリ化、マッチングを「待ちライド全件 × 空き椅子の最近傍（距離/速度）」に変更、chi Logger と nginx access log を off、MySQL 設定（buffer pool 1G・flush=2・binlog off）、通知 retry 200ms、matcher 0.2s → 28780
 - 21:15 MySQL を isu2 に分離（isu1 の mysql は disable、isuride-go.service から Requires=mysql を削除、env.sh の DB_HOST=192.168.0.12）→ 57137
+- 21:20 通知を SSE 化（in-memory hub で状態遷移時に push）、認証のトークン→エンティティをキャッシュ、nginx upstream keepalive・worker_rlimit_nofile 65535（初回は Too many open files で fail）→ 111742

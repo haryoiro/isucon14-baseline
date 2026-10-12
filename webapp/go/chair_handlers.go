@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -133,6 +132,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	location := &ChairLocation{CreatedAt: now}
+	newStatus := ""
 
 	ride := &Ride{}
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
@@ -142,6 +142,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		_ = status
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -152,6 +153,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				newStatus = "PICKUP"
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
@@ -159,6 +161,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				newStatus = "ARRIVED"
 			}
 		}
 	}
@@ -166,6 +169,9 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if newStatus != "" {
+		publishRide(ctx, ride.ID, newStatus, true, true)
 	}
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
@@ -189,87 +195,6 @@ type chairGetNotificationResponseData struct {
 	PickupCoordinate      Coordinate `json:"pickup_coordinate"`
 	DestinationCoordinate Coordinate `json:"destination_coordinate"`
 	Status                string     `json:"status"`
-}
-
-func chairGetNotification(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	chair := ctx.Value("chair").(*Chair)
-
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
-	ride := &Ride{}
-	yetSentRideStatus := RideStatus{}
-	status := ""
-
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeJSON(w, http.StatusOK, &chairGetNotificationResponse{
-				RetryAfterMs: 200,
-			})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	if err := tx.GetContext(ctx, &yetSentRideStatus, `SELECT * FROM ride_statuses WHERE ride_id = ? AND chair_sent_at IS NULL ORDER BY created_at ASC LIMIT 1`, ride.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			status, err = getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-		} else {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	} else {
-		status = yetSentRideStatus.Status
-	}
-
-	user := &User{}
-	err = tx.GetContext(ctx, user, "SELECT * FROM users WHERE id = ? FOR SHARE", ride.UserID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	if yetSentRideStatus.ID != "" {
-		_, err := tx.ExecContext(ctx, `UPDATE ride_statuses SET chair_sent_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, yetSentRideStatus.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, &chairGetNotificationResponse{
-		Data: &chairGetNotificationResponseData{
-			RideID: ride.ID,
-			User: simpleUser{
-				ID:   user.ID,
-				Name: fmt.Sprintf("%s %s", user.Firstname, user.Lastname),
-			},
-			PickupCoordinate: Coordinate{
-				Latitude:  ride.PickupLatitude,
-				Longitude: ride.PickupLongitude,
-			},
-			DestinationCoordinate: Coordinate{
-				Latitude:  ride.DestinationLatitude,
-				Longitude: ride.DestinationLongitude,
-			},
-			Status: status,
-		},
-		RetryAfterMs: 200,
-	})
 }
 
 type postChairRidesRideIDStatusRequest struct {
@@ -334,12 +259,14 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	default:
 		writeError(w, http.StatusBadRequest, errors.New("invalid status"))
+		return
 	}
 
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	publishRide(ctx, ride.ID, req.Status, true, true)
 
 	w.WriteHeader(http.StatusNoContent)
 }
