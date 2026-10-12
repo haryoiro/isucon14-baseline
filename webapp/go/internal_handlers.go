@@ -48,10 +48,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 func runMatching(ctx context.Context) error {
 	matchMu.Lock()
 	defer matchMu.Unlock()
-	rides := []matchRide{}
-	if err := db.SelectContext(ctx, &rides, `SELECT id, pickup_latitude, pickup_longitude, destination_latitude, destination_longitude, created_at FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
-		return err
-	}
+	rides := getWaitingRides()
 	if len(rides) == 0 {
 		return nil
 	}
