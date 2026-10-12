@@ -16,3 +16,4 @@
 - 22:27 新ベンチで isu1 nginx と isu2 MySQL が飽和。静的ファイルを事前 gzip して gzip_static on（nginx 195%→162%）、upstream keepalive 1024、GOGC=200 → 600k 前後
 - 22:32 招待ロックを招待コード単位に（グローバル mutex で登録が 10s タイムアウトする事象）。ride_statuses を非同期バッチ化、chair の status 更新をメモリで検証、owner キャッシュ → 593k（エラー 0）
 - 22:45 TLS 終端を isu2/isu3 に分散（isu1 は stream で L4）を試したが 574k/584k で改善なし（ローカル unix socket 経由は RST 多発で fail）。isu1 で TLS 終端する構成に戻した
+- 22:57 早期に全台再起動試験 → pass 678082。isuride-payment_mock が mysql を Requires していて isu1/isu3 で mysql が起動していたので payment_mock を disable
