@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -21,6 +24,18 @@ var db *sqlx.DB
 
 func main() {
 	mux := setup()
+	if err := loadState(context.Background()); err != nil {
+		panic(err)
+	}
+	startFlusher()
+	startMatcher()
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+		<-sig
+		flushLocations()
+		os.Exit(0)
+	}()
 	slog.Info("Listening on :8080")
 	http.ListenAndServe(":8080", mux)
 }
@@ -130,12 +145,21 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	matchMu.Lock()
+	defer matchMu.Unlock()
+	flushMu.Lock()
+	defer flushMu.Unlock()
+	resetLocBuf()
 	if out, err := exec.Command("../sql/init.sh").CombinedOutput(); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("failed to initialize: %s: %w", string(out), err))
 		return
 	}
 
 	clearCaches()
+	if err := loadState(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	if _, err := db.ExecContext(ctx, "UPDATE settings SET value = ? WHERE name = 'payment_gateway_url'", req.PaymentServer); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

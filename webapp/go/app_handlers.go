@@ -608,16 +608,19 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ride.ChairID.Valid {
-		chairID := ride.ChairID.String
-		pendingComplete.Store(chairID, true)
-		defer pendingComplete.Delete(chairID)
-	}
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	publishRide(ctx, rideID, "COMPLETED", true, true)
+	if ride.ChairID.Valid {
+		stMu.Lock()
+		if c := chairStates[ride.ChairID.String]; c != nil && c.RideID == rideID {
+			c.RideID = ""
+			c.RideStatus = ""
+		}
+		stMu.Unlock()
+	}
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
@@ -681,7 +684,6 @@ type appGetNearbyChairsResponseChair struct {
 }
 
 func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	latStr := r.URL.Query().Get("latitude")
 	lonStr := r.URL.Query().Get("longitude")
 	distanceStr := r.URL.Query().Get("distance")
@@ -712,49 +714,24 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	coordinate := Coordinate{Latitude: lat, Longitude: lon}
+	retrievedAt := time.Now()
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
-
-	type nearbyRow struct {
-		ID        string `db:"id"`
-		Name      string `db:"name"`
-		Model     string `db:"model"`
-		Latitude  int    `db:"latitude"`
-		Longitude int    `db:"longitude"`
-	}
-	rows := []nearbyRow{}
-	if err := tx.SelectContext(ctx, &rows, `SELECT c.id, c.name, c.model, t.latitude, t.longitude FROM chairs c JOIN chair_totals t ON t.chair_id = c.id
-		WHERE c.is_active = TRUE AND NOT EXISTS (SELECT 1 FROM rides r WHERE r.chair_id = c.id AND r.evaluation IS NULL)`); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
-	for _, c := range rows {
-		if calculateDistance(coordinate.Latitude, coordinate.Longitude, c.Latitude, c.Longitude) <= distance {
+	stMu.Lock()
+	for _, c := range chairStates {
+		if !c.Active || c.RideID != "" || !c.HasLoc {
+			continue
+		}
+		if calculateDistance(coordinate.Latitude, coordinate.Longitude, c.Lat, c.Lon) <= distance {
 			nearbyChairs = append(nearbyChairs, appGetNearbyChairsResponseChair{
 				ID:                c.ID,
 				Name:              c.Name,
 				Model:             c.Model,
-				CurrentCoordinate: Coordinate{Latitude: c.Latitude, Longitude: c.Longitude},
+				CurrentCoordinate: Coordinate{Latitude: c.Lat, Longitude: c.Lon},
 			})
 		}
 	}
-
-	retrievedAt := &time.Time{}
-	err = tx.GetContext(
-		ctx,
-		retrievedAt,
-		`SELECT CURRENT_TIMESTAMP(6)`,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	stMu.Unlock()
 
 	writeJSON(w, http.StatusOK, &appGetNearbyChairsResponse{
 		Chairs:      nearbyChairs,

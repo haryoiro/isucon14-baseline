@@ -194,40 +194,26 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	owner := ctx.Value("owner").(*Owner)
 
-	chairs := []chairWithDetail{}
-	if err := db.SelectContext(ctx, &chairs, `SELECT id,
-       owner_id,
-       name,
-       access_token,
-       model,
-       is_active,
-       created_at,
-       updated_at,
-       IFNULL(total_distance, 0) AS total_distance,
-       total_distance_updated_at
-FROM chairs
-       LEFT JOIN chair_totals ON chair_totals.chair_id = chairs.id
-WHERE owner_id = ?
-`, owner.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	res := ownerGetChairResponse{}
-	for _, chair := range chairs {
-		c := ownerGetChairResponseChair{
-			ID:            chair.ID,
-			Name:          chair.Name,
-			Model:         chair.Model,
-			Active:        chair.IsActive,
-			RegisteredAt:  chair.CreatedAt.UnixMilli(),
-			TotalDistance: chair.TotalDistance,
+	res := ownerGetChairResponse{Chairs: []ownerGetChairResponseChair{}}
+	stMu.Lock()
+	for _, c := range chairStates {
+		if c.OwnerID != owner.ID {
+			continue
 		}
-		if chair.TotalDistanceUpdatedAt.Valid {
-			t := chair.TotalDistanceUpdatedAt.Time.UnixMilli()
-			c.TotalDistanceUpdatedAt = &t
+		oc := ownerGetChairResponseChair{
+			ID:            c.ID,
+			Name:          c.Name,
+			Model:         c.Model,
+			Active:        c.Active,
+			RegisteredAt:  c.CreatedAt.UnixMilli(),
+			TotalDistance: c.TotalDist,
 		}
-		res.Chairs = append(res.Chairs, c)
+		if c.HasLoc {
+			t := c.LocUpdatedAt.UnixMilli()
+			oc.TotalDistanceUpdatedAt = &t
+		}
+		res.Chairs = append(res.Chairs, oc)
 	}
+	stMu.Unlock()
 	writeJSON(w, http.StatusOK, res)
 }

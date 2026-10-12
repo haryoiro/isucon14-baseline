@@ -1,56 +1,74 @@
 package main
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 )
 
 type matchRide struct {
-	ID        string `db:"id"`
-	Latitude  int    `db:"pickup_latitude"`
-	Longitude int    `db:"pickup_longitude"`
+	ID      string `db:"id"`
+	PickLat int    `db:"pickup_latitude"`
+	PickLon int    `db:"pickup_longitude"`
+	DestLat int    `db:"destination_latitude"`
+	DestLon int    `db:"destination_longitude"`
 }
 
-type matchChair struct {
-	ID        string `db:"id"`
-	Speed     int    `db:"speed"`
-	Latitude  int    `db:"latitude"`
-	Longitude int    `db:"longitude"`
+var matchMu sync.Mutex
+
+func startMatcher() {
+	go func() {
+		for {
+			time.Sleep(100 * time.Millisecond)
+			if err := runMatching(context.Background()); err != nil {
+				slog.Error("matching", "err", err)
+			}
+		}
+	}()
 }
 
 // このAPIをインスタンス内から一定間隔で叩かせることで、椅子とライドをマッチングさせる
 func internalGetMatching(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	rides := []matchRide{}
-	if err := db.SelectContext(ctx, &rides, `SELECT id, pickup_latitude, pickup_longitude FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
+	if err := runMatching(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func runMatching(ctx context.Context) error {
+	matchMu.Lock()
+	defer matchMu.Unlock()
+	rides := []matchRide{}
+	if err := db.SelectContext(ctx, &rides, `SELECT id, pickup_latitude, pickup_longitude, destination_latitude, destination_longitude FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
+		return err
 	}
 	if len(rides) == 0 {
-		w.WriteHeader(http.StatusNoContent)
-		return
+		return nil
 	}
-	// 空いている椅子: アクティブで、割り当て済みライドがすべて COMPLETED を椅子に通知済み
-	chairs := []matchChair{}
-	if err := db.SelectContext(ctx, &chairs, `SELECT c.id, m.speed, t.latitude, t.longitude
-		FROM chairs c JOIN chair_models m ON m.name = c.model JOIN chair_totals t ON t.chair_id = c.id
-		WHERE c.is_active = TRUE AND NOT EXISTS (
-			SELECT 1 FROM rides r WHERE r.chair_id = c.id AND r.evaluation IS NULL)`); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+	type assign struct {
+		ride  matchRide
+		chair *chairState
 	}
-	used := make([]bool, len(chairs))
+	assigns := []assign{}
+	stMu.Lock()
+	free := []*chairState{}
+	for _, c := range chairStates {
+		if c.Active && c.RideID == "" && c.HasLoc {
+			free = append(free, c)
+		}
+	}
 	for _, ride := range rides {
 		best := -1
 		bestScore := 0.0
-		for i, c := range chairs {
-			if used[i] {
+		for i, c := range free {
+			if c == nil {
 				continue
 			}
-			if _, ok := pendingComplete.Load(c.ID); ok {
-				continue
-			}
-			d := calculateDistance(c.Latitude, c.Longitude, ride.Latitude, ride.Longitude)
-			score := float64(d) / float64(c.Speed)
+			d := calculateDistance(c.Lat, c.Lon, ride.PickLat, ride.PickLon)
+			score := float64(d) / float64(max(c.Speed, 1))
 			if best < 0 || score < bestScore {
 				best = i
 				bestScore = score
@@ -59,16 +77,35 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		if best < 0 {
 			break
 		}
-		res, err := db.ExecContext(ctx, "UPDATE rides SET chair_id = ? WHERE id = ? AND chair_id IS NULL", chairs[best].ID, ride.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if n, _ := res.RowsAffected(); n == 1 {
-			used[best] = true
-			publishRide(ctx, ride.ID, "MATCHING", false, true)
-		}
+		c := free[best]
+		free[best] = nil
+		c.RideID = ride.ID
+		c.RideStatus = "MATCHING"
+		c.PickLat, c.PickLon, c.DestLat, c.DestLon = ride.PickLat, ride.PickLon, ride.DestLat, ride.DestLon
+		assigns = append(assigns, assign{ride, c})
 	}
+	stMu.Unlock()
 
-	w.WriteHeader(http.StatusNoContent)
+	for _, a := range assigns {
+		res, err := db.ExecContext(ctx, "UPDATE rides SET chair_id = ? WHERE id = ? AND chair_id IS NULL", a.chair.ID, a.ride.ID)
+		ok := err == nil
+		if ok {
+			n, _ := res.RowsAffected()
+			ok = n == 1
+		}
+		if !ok {
+			stMu.Lock()
+			if a.chair.RideID == a.ride.ID {
+				a.chair.RideID = ""
+				a.chair.RideStatus = ""
+			}
+			stMu.Unlock()
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		publishRide(ctx, a.ride.ID, "MATCHING", false, true)
+	}
+	return nil
 }

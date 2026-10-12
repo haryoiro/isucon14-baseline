@@ -12,3 +12,5 @@
 | 21:15 | 57137 | true | DB を isu2 に分離 |
 | 21:18 | 85051 | false | SSE 通知・認証キャッシュ |
 | 21:20 | 111742 | true | SSE + nofile 上げ |
+| 21:21 | 109721 | true | nearby retrieved_at 修正 (slowlog) |
+| 21:26 | 208059 | true | 椅子状態をメモリ化（位置・距離・現ライド・active）、位置はバッチ書き込み、マッチングをアプリ内 goroutine 100ms |
