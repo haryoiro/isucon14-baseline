@@ -18,7 +18,10 @@ type matchRide struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
-var matchMu sync.Mutex
+var (
+	matchMu      sync.Mutex
+	lastMatchLog time.Time
+)
 
 const urgentWait = 3 * time.Second
 
@@ -76,6 +79,16 @@ func runMatching(ctx context.Context) error {
 		}
 	}
 	sort.Slice(pairs, func(i, j int) bool { return pairs[i].score < pairs[j].score })
+	if time.Since(lastMatchLog) > time.Second {
+		lastMatchLog = time.Now()
+		active := 0
+		for _, c := range chairStates {
+			if c.Active {
+				active++
+			}
+		}
+		slog.Info("matching", "rides", len(rides), "free", len(free), "active", active, "chairs", len(chairStates))
+	}
 	rideUsed := make([]bool, len(rides))
 	chairUsed := make([]bool, len(free))
 	now := time.Now()

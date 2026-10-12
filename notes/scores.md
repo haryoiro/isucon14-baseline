@@ -30,3 +30,10 @@
 | 21:49 | 475250 | false | nearby: MATCHING 通知送信前の椅子のみ含める |
 | 21:51 | 427254 | true | nearby: 解放後1秒は除外 |
 | 21:53 | 353465 | true | 招待登録の FOR UPDATE をアプリ内 mutex に（deadlock 解消） |
+| 21:54 | 466102 | true | 同上（再計測） |
+| 21:55 | 456521 | true | 同上（CPU/latency 観測） |
+| 21:57 | 402518 | true | 同上（slowlog） |
+| 21:59 | 411224 | true | 同上（matching ログ） |
+| 22:00 | 269201 | true | urgentWait 15s |
+| 22:02 | 349531 | true | urgentWait 0（純 FIFO 最寄り） |
+| 22:03 | 458160 | true | urgentWait 3s に戻す・決済を commit 前に（sales 整合） |
