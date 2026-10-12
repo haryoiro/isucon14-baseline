@@ -150,6 +150,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		cacheStatus(rideID, newStatus)
 		publishRide(ctx, rideID, newStatus, true, true)
 	}
 
@@ -250,6 +251,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		c.RideStatus = req.Status
 	}
 	stMu.Unlock()
+	cacheStatus(ride.ID, req.Status)
 	publishRide(ctx, ride.ID, req.Status, true, true)
 
 	w.WriteHeader(http.StatusNoContent)

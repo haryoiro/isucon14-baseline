@@ -103,6 +103,7 @@ func runMatching(ctx context.Context) error {
 		c := free[best]
 		c.RideID = ride.ID
 		c.RideStatus = "MATCHING"
+		c.MatchNotified = false
 		c.PickLat, c.PickLon, c.DestLat, c.DestLon = ride.PickLat, ride.PickLon, ride.DestLat, ride.DestLon
 		assigns = append(assigns, assign{ride, c})
 	}
@@ -115,13 +116,15 @@ func runMatching(ctx context.Context) error {
 		c := free[p.c]
 		c.RideID = ride.ID
 		c.RideStatus = "MATCHING"
+		c.MatchNotified = false
 		c.PickLat, c.PickLon, c.DestLat, c.DestLon = ride.PickLat, ride.PickLon, ride.DestLat, ride.DestLon
 		assigns = append(assigns, assign{ride, c})
 	}
 	stMu.Unlock()
 
 	for _, a := range assigns {
-		res, err := db.ExecContext(ctx, "UPDATE rides SET chair_id = ? WHERE id = ? AND chair_id IS NULL", a.chair.ID, a.ride.ID)
+		at := time.Now().Truncate(time.Microsecond)
+		res, err := db.ExecContext(ctx, "UPDATE rides SET chair_id = ?, updated_at = ? WHERE id = ? AND chair_id IS NULL", a.chair.ID, at, a.ride.ID)
 		ok := err == nil
 		if ok {
 			n, _ := res.RowsAffected()
@@ -139,7 +142,13 @@ func runMatching(ctx context.Context) error {
 			}
 			continue
 		}
+		cacheAssign(a.ride.ID, a.chair.ID, at)
 		publishRide(ctx, a.ride.ID, "MATCHING", false, true)
+		stMu.Lock()
+		if a.chair.RideID == a.ride.ID {
+			a.chair.MatchNotified = true
+		}
+		stMu.Unlock()
 	}
 	return nil
 }

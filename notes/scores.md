@@ -25,3 +25,7 @@
 | 21:41 | 238145 | true | 同上（access log 計測） |
 | 21:42 | 145 | false | 決済を非同期化（Idempotency-Key でリトライ） |
 | 21:44 | 388436 | true | 決済: commit 後に同期実行・Idempotency-Key・keepalive client |
+| 21:45 | 358122 | true | 同上（slowlog） |
+| 21:48 | 462086 | false | ride キャッシュ（ride・fare・status・椅子評価統計をメモリ化） |
+| 21:49 | 475250 | false | nearby: MATCHING 通知送信前の椅子のみ含める |
+| 21:51 | 427254 | true | nearby: 解放後1秒は除外 |

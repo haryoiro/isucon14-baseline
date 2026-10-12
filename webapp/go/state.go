@@ -23,6 +23,7 @@ type chairState struct {
 	LocUpdatedAt time.Time
 
 	// 現在のライド（COMPLETED を椅子へ通知し終えるまで保持）
+	MatchNotified                      bool
 	FreedAt                            time.Time
 	RideID                             string
 	RideStatus                         string
@@ -47,6 +48,9 @@ type locRow struct {
 }
 
 func loadState(ctx context.Context) error {
+	if err := loadRideCache(ctx); err != nil {
+		return err
+	}
 	type row struct {
 		ID        string    `db:"id"`
 		OwnerID   string    `db:"owner_id"`

@@ -220,10 +220,15 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		fare, err := calculateDiscountedFare(ctx, tx, user.ID, &ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+		var fare int
+		if ri, ok := getRideInfo(ride.ID); ok {
+			fare = ri.Fare
+		} else {
+			fare, err = calculateDiscountedFare(ctx, tx, user.ID, &ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
 		}
 
 		item := getAppRidesResponseItem{
@@ -238,8 +243,8 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 
 		item.Chair = getAppRidesResponseItemChair{}
 
-		chair := &Chair{}
-		if err := tx.GetContext(ctx, chair, `SELECT * FROM chairs WHERE id = ?`, ride.ChairID); err != nil {
+		chair, err := getChairByID(ctx, ride.ChairID.String)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -283,6 +288,9 @@ type executableGet interface {
 }
 
 func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
+	if ri, ok := getRideInfo(rideID); ok && ri.Status != "" {
+		return ri.Status, nil
+	}
 	status := ""
 	if err := tx.GetContext(ctx, &status, `SELECT status FROM ride_statuses WHERE ride_id = ? ORDER BY created_at DESC LIMIT 1`, rideID); err != nil {
 		return "", err
@@ -418,6 +426,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	cacheNewRide(ride, fare)
 	publishRide(ctx, rideID, "MATCHING", true, false)
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
@@ -601,6 +610,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	cacheComplete(*ride)
 	publishRide(ctx, rideID, "COMPLETED", true, true)
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
@@ -614,6 +624,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		if c := chairStates[ride.ChairID.String]; c != nil && c.RideID == rideID {
 			c.RideID = ""
 			c.RideStatus = ""
+			c.FreedAt = time.Now()
 		}
 		stMu.Unlock()
 	}
@@ -675,6 +686,8 @@ type appGetNearbyChairsResponseChair struct {
 	CurrentCoordinate Coordinate `json:"current_coordinate"`
 }
 
+const nearbyFreedGrace = 1 * time.Second
+
 func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	latStr := r.URL.Query().Get("latitude")
 	lonStr := r.URL.Query().Get("longitude")
@@ -708,9 +721,10 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	coordinate := Coordinate{Latitude: lat, Longitude: lon}
 
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
+	now := time.Now()
 	stMu.Lock()
 	for _, c := range chairStates {
-		if !c.Active || (c.RideID != "" && c.RideStatus != "MATCHING") || !c.HasLoc {
+		if !c.Active || (c.RideID != "" && (c.RideStatus != "MATCHING" || c.MatchNotified)) || now.Sub(c.FreedAt) < nearbyFreedGrace || !c.HasLoc {
 			continue
 		}
 		if calculateDistance(coordinate.Latitude, coordinate.Longitude, c.Lat, c.Lon) <= distance {

@@ -69,11 +69,7 @@ type notifyEnvelope struct {
 	Body   []byte
 }
 
-func buildAppNotification(ctx context.Context, ride *Ride, status string) ([]byte, error) {
-	fare, err := calculateDiscountedFare(ctx, db, ride.UserID, ride, 0, 0, 0, 0)
-	if err != nil {
-		return nil, err
-	}
+func buildAppNotification(ctx context.Context, ride *Ride, status string, fare int) ([]byte, error) {
 	data := &appGetNotificationResponseData{
 		RideID:                ride.ID,
 		PickupCoordinate:      Coordinate{Latitude: ride.PickupLatitude, Longitude: ride.PickupLongitude},
@@ -88,11 +84,7 @@ func buildAppNotification(ctx context.Context, ride *Ride, status string) ([]byt
 		if err != nil {
 			return nil, err
 		}
-		stats, err := getChairStats(ctx, db, chair.ID)
-		if err != nil {
-			return nil, err
-		}
-		data.Chair = &appGetNotificationResponseChair{ID: chair.ID, Name: chair.Name, Model: chair.Model, Stats: stats}
+		data.Chair = &appGetNotificationResponseChair{ID: chair.ID, Name: chair.Name, Model: chair.Model, Stats: getChairStatsMem(chair.ID)}
 	}
 	return json.Marshal(data)
 }
@@ -114,13 +106,14 @@ func buildChairNotification(ctx context.Context, ride *Ride, status string) ([]b
 // publishRide はライドの状態変化をユーザーと（割り当て済みなら）椅子へ通知する
 func publishRide(ctx context.Context, rideID string, status string, toApp, toChair bool) {
 	ctx = context.WithoutCancel(ctx)
-	ride := &Ride{}
-	if err := db.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
-		slog.Error("publish: ride", "err", err)
+	ri, ok := getRideInfo(rideID)
+	if !ok {
+		slog.Error("publish: ride not cached", "ride", rideID)
 		return
 	}
+	ride := &ri.Ride
 	if toApp {
-		b, err := buildAppNotification(ctx, ride, status)
+		b, err := buildAppNotification(ctx, ride, status, ri.Fare)
 		if err != nil {
 			slog.Error("publish: app", "err", err)
 		} else {
@@ -217,18 +210,19 @@ func serveSSE(w http.ResponseWriter, r *http.Request, h *hub, id string, initial
 func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value("user").(*User)
 	serveSSE(w, r, appHub, user.ID, func(ctx context.Context) ([]byte, error) {
-		ride := &Ride{}
-		if err := db.GetContext(ctx, ride, `SELECT * FROM rides WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.ID); err != nil {
+		var rideID string
+		if err := db.GetContext(ctx, &rideID, `SELECT id FROM rides WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.ID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, nil
 			}
 			return nil, err
 		}
-		status, err := getLatestRideStatus(ctx, db, ride.ID)
-		if err != nil {
-			return nil, err
+		ri, ok := getRideInfo(rideID)
+		if !ok {
+			return nil, errors.New("ride not cached")
 		}
-		b, err := buildAppNotification(ctx, ride, status)
+		ride, status := &ri.Ride, ri.Status
+		b, err := buildAppNotification(ctx, ride, status, ri.Fare)
 		if err != nil {
 			return nil, err
 		}
@@ -239,17 +233,18 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 	chair := r.Context().Value("chair").(*Chair)
 	serveSSE(w, r, chairHub, chair.ID, func(ctx context.Context) ([]byte, error) {
-		ride := &Ride{}
-		if err := db.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+		var rideID string
+		if err := db.GetContext(ctx, &rideID, `SELECT id FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, nil
 			}
 			return nil, err
 		}
-		status, err := getLatestRideStatus(ctx, db, ride.ID)
-		if err != nil {
-			return nil, err
+		ri, ok := getRideInfo(rideID)
+		if !ok {
+			return nil, errors.New("ride not cached")
 		}
+		ride, status := &ri.Ride, ri.Status
 		b, err := buildChairNotification(ctx, ride, status)
 		if err != nil {
 			return nil, err

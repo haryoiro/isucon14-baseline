@@ -10,3 +10,4 @@
 - 21:35 マッチングを全ペア貪欲にすると乗車地点・移動の不満は激減したが古いライドが飢えて fail(CODE=32)。5秒以上待ちを FIFO 優先にするハイブリッドへ
 - 21:38 nearby の CODE=31（椅子が足りない）は、ベンチが「MATCHING 中（未受理）の椅子」を空きとして扱っているためと判明。nearby に含める → 247650
 - 21:44 決済を commit 後に同期実行（Idempotency-Key=ride_id でリトライ、keepalive 付き専用 http.Client）。非同期にすると CODE=34 で fail したので同期のまま → 388436
+- 21:51 ride キャッシュ（ride・fare・最新 status・椅子評価統計）で publish の DB クエリを除去 → 462086(fail: nearby CODE=30)。nearby は「MATCHING 通知前の椅子は含める」「解放後1秒は除外」でエラー解消 → 427254
