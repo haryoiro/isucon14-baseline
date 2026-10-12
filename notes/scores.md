@@ -14,3 +14,5 @@
 | 21:20 | 111742 | true | SSE + nofile 上げ |
 | 21:21 | 109721 | true | nearby retrieved_at 修正 (slowlog) |
 | 21:26 | 208059 | true | 椅子状態をメモリ化（位置・距離・現ライド・active）、位置はバッチ書き込み、マッチングをアプリ内 goroutine 100ms |
+| 21:28 | 173554 | true | nearby で解放直後1秒の椅子を除外 (slowlog) |
+| 21:30 | 211801 | true | nearby: retrieved_at をスナップショット後に・椅子解放を評価レスポンス送信後に |

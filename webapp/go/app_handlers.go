@@ -613,6 +613,13 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	publishRide(ctx, rideID, "COMPLETED", true, true)
+
+	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
+		CompletedAt: ride.UpdatedAt.UnixMilli(),
+	})
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 	if ride.ChairID.Valid {
 		stMu.Lock()
 		if c := chairStates[ride.ChairID.String]; c != nil && c.RideID == rideID {
@@ -621,10 +628,6 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		}
 		stMu.Unlock()
 	}
-
-	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
-		CompletedAt: ride.UpdatedAt.UnixMilli(),
-	})
 }
 
 type appGetNotificationResponse struct {
@@ -714,7 +717,6 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	coordinate := Coordinate{Latitude: lat, Longitude: lon}
-	retrievedAt := time.Now()
 
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
 	stMu.Lock()
@@ -732,6 +734,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	stMu.Unlock()
+	retrievedAt := time.Now()
 
 	writeJSON(w, http.StatusOK, &appGetNearbyChairsResponse{
 		Chairs:      nearbyChairs,

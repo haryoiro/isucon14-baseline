@@ -23,6 +23,7 @@ type chairState struct {
 	LocUpdatedAt time.Time
 
 	// 現在のライド（COMPLETED を椅子へ通知し終えるまで保持）
+	FreedAt                            time.Time
 	RideID                             string
 	RideStatus                         string
 	PickLat, PickLon, DestLat, DestLon int
