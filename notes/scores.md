@@ -76,3 +76,5 @@
 | 23:06 | 815316 | true | HTTP/2 有効化（実験） |
 | 23:07 | 778199 | true | 同上（CPU 観測） |
 | 23:09 | 751477 | true | chair_totals の書き込みを 1 秒ごとに |
+| 23:10 | 757746 | true | 同上（slowlog） |
+| 23:12 | 727918 | true | MySQL flush_log_at_trx_commit=0・performance_schema OFF |
