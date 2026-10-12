@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -541,6 +542,16 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if v, ok := arrivedAt.LoadAndDelete(rideID); ok {
+		d := time.Since(v.(time.Time))
+		gapMu.Lock()
+		gapN++
+		gapSum += d
+		if gapN%1000 == 0 {
+			slog.Info("arrive->eval", "n", gapN, "avg_ms", gapSum.Milliseconds()/int64(gapN))
+		}
+		gapMu.Unlock()
+	}
 	ri, ok := getRideInfo(rideID)
 	if !ok {
 		writeError(w, http.StatusNotFound, errors.New("ride not found"))
@@ -599,6 +610,13 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		stMu.Unlock()
 	}
 }
+
+var (
+	arrivedAt sync.Map
+	gapMu     sync.Mutex
+	gapN      int
+	gapSum    time.Duration
+)
 
 var (
 	paymentTokens sync.Map

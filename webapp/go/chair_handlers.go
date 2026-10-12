@@ -147,6 +147,9 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	if newStatus != "" {
 		enqueueStatus(rideID, newStatus)
 		cacheStatus(rideID, newStatus)
+		if newStatus == "ARRIVED" {
+			arrivedAt.Store(rideID, time.Now())
+		}
 		publishRide(ctx, rideID, newStatus, true, true)
 	}
 
