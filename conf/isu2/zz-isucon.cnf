@@ -1,0 +1,8 @@
+[mysqld]
+bind-address = 0.0.0.0
+mysqlx-bind-address = 127.0.0.1
+innodb_buffer_pool_size = 2G
+innodb_flush_log_at_trx_commit = 2
+innodb_doublewrite = 0
+disable_log_bin
+max_connections = 1000
