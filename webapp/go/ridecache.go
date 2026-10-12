@@ -18,7 +18,13 @@ type chairStat struct {
 	Sum   int
 }
 
+type saleRec struct {
+	At     time.Time
+	Amount int
+}
+
 var (
+	chairSaleRecs = map[string][]saleRec{}
 	rcMu       sync.Mutex
 	rideCache  = map[string]*rideInfo{}
 	chairStats = map[string]*chairStat{}
@@ -61,9 +67,16 @@ func loadRideCache(ctx context.Context) error {
 			ri.Status = s.Status
 		}
 	}
+	sales := map[string][]saleRec{}
+	for _, ri := range rc {
+		if ri.Status == "COMPLETED" && ri.Ride.ChairID.Valid {
+			sales[ri.Ride.ChairID.String] = append(sales[ri.Ride.ChairID.String], saleRec{At: ri.Ride.UpdatedAt, Amount: calculateSale(ri.Ride)})
+		}
+	}
 	rcMu.Lock()
 	rideCache = rc
 	chairStats = cs
+	chairSaleRecs = sales
 	rcMu.Unlock()
 	return nil
 }
@@ -105,6 +118,7 @@ func cacheComplete(r Ride) {
 		}
 		s.Count++
 		s.Sum += *r.Evaluation
+		chairSaleRecs[r.ChairID.String] = append(chairSaleRecs[r.ChairID.String], saleRec{At: r.UpdatedAt, Amount: calculateSale(r)})
 	}
 	rcMu.Unlock()
 }

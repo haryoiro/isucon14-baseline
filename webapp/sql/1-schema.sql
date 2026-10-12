@@ -151,3 +151,4 @@ CREATE TABLE chair_totals
   longitude                 INTEGER     NOT NULL,
   PRIMARY KEY (chair_id)
 );
+ALTER TABLE users DROP INDEX username;

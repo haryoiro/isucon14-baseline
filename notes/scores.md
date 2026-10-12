@@ -37,3 +37,4 @@
 | 22:00 | 269201 | true | urgentWait 15s |
 | 22:02 | 349531 | true | urgentWait 0（純 FIFO 最寄り） |
 | 22:03 | 458160 | true | urgentWait 3s に戻す・決済を commit 前に（sales 整合） |
+| 22:06 | 436349 | true | owner sales をメモリから計算・username UNIQUE 削除 |

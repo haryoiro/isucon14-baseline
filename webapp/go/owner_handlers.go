@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sort"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -80,7 +81,6 @@ type ownerGetSalesResponse struct {
 }
 
 func ownerGetSales(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	since := time.Unix(0, 0)
 	until := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
 	if r.URL.Query().Get("since") != "" {
@@ -101,43 +101,36 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 	}
 
 	owner := r.Context().Value("owner").(*Owner)
+	untilEx := until.Add(time.Millisecond)
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+	type ch struct{ ID, Name, Model string }
+	chs := []ch{}
+	stMu.Lock()
+	for _, c := range chairStates {
+		if c.OwnerID == owner.ID {
+			chs = append(chs, ch{c.ID, c.Name, c.Model})
+		}
 	}
-	defer tx.Rollback()
-
-	chairs := []Chair{}
-	if err := tx.SelectContext(ctx, &chairs, "SELECT * FROM chairs WHERE owner_id = ?", owner.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	stMu.Unlock()
+	sort.Slice(chs, func(i, j int) bool { return chs[i].ID < chs[j].ID })
 
 	res := ownerGetSalesResponse{
 		TotalSales: 0,
 	}
-
 	modelSalesByModel := map[string]int{}
-	for _, chair := range chairs {
-		rides := []Ride{}
-		if err := tx.SelectContext(ctx, &rides, "SELECT rides.* FROM rides JOIN ride_statuses ON rides.id = ride_statuses.ride_id WHERE chair_id = ? AND status = 'COMPLETED' AND updated_at BETWEEN ? AND ? + INTERVAL 999 MICROSECOND", chair.ID, since, until); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+	rcMu.Lock()
+	for _, c := range chs {
+		sales := 0
+		for _, rec := range chairSaleRecs[c.ID] {
+			if !rec.At.Before(since) && rec.At.Before(untilEx) {
+				sales += rec.Amount
+			}
 		}
-
-		sales := sumSales(rides)
 		res.TotalSales += sales
-
-		res.Chairs = append(res.Chairs, chairSales{
-			ID:    chair.ID,
-			Name:  chair.Name,
-			Sales: sales,
-		})
-
-		modelSalesByModel[chair.Model] += sales
+		res.Chairs = append(res.Chairs, chairSales{ID: c.ID, Name: c.Name, Sales: sales})
+		modelSalesByModel[c.Model] += sales
 	}
+	rcMu.Unlock()
 
 	models := []modelSales{}
 	for model, sales := range modelSalesByModel {
