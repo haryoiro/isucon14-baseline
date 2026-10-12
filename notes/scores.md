@@ -56,3 +56,8 @@
 | 22:32 | 593154 | true | ride_statuses を非同期バッチ書き込み・status 更新をメモリで検証・owner キャッシュ |
 | 22:34 | 622996 | true | 同上（CPU 観測） |
 | 22:36 | 607612 | true | 評価をトランザクションなし・キャッシュ利用（決済→UPDATE 1本） |
+| 22:37 | 642608 | true | 同上（latency 観測） |
+| 22:40 | 474000 | false | TLS 終端を isu1/isu3 に分散（isu1 は stream で L4 振り分け） |
+| 22:41 | 417464 | false | TLS 分散（ローカルは unix socket） |
+| 22:43 | 574236 | true | isu1=L4 振り分けのみ、TLS 終端は isu2/isu3 の nginx |
+| 22:44 | 584705 | true | 同上（再計測） |
