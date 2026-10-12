@@ -144,26 +144,11 @@ func flushLocations() {
 	locBuf = nil
 	dirty = map[string]struct{}{}
 	locBufMu.Unlock()
-	if len(buf) == 0 {
+	_ = buf
+	if len(d) == 0 {
 		return
 	}
 	ctx := context.Background()
-	for i := 0; i < len(buf); i += 500 {
-		end := min(i+500, len(buf))
-		var sb strings.Builder
-		args := make([]any, 0, (end-i)*5)
-		sb.WriteString("INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at) VALUES ")
-		for j, r := range buf[i:end] {
-			if j > 0 {
-				sb.WriteString(",")
-			}
-			sb.WriteString("(?,?,?,?,?)")
-			args = append(args, r.ID, r.ChairID, r.Lat, r.Lon, r.At)
-		}
-		if _, err := db.ExecContext(ctx, sb.String(), args...); err != nil {
-			slog.Error("flush chair_locations", "err", err)
-		}
-	}
 	var sb strings.Builder
 	args := []any{}
 	sb.WriteString("INSERT INTO chair_totals (chair_id, total_distance, total_distance_updated_at, latitude, longitude) VALUES ")

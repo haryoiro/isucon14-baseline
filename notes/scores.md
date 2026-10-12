@@ -38,3 +38,4 @@
 | 22:02 | 349531 | true | urgentWait 0（純 FIFO 最寄り） |
 | 22:03 | 458160 | true | urgentWait 3s に戻す・決済を commit 前に（sales 整合） |
 | 22:06 | 436349 | true | owner sales をメモリから計算・username UNIQUE 削除 |
+| 22:07 | 445581 | true | chair_locations の永続化をやめる（chair_totals のみ）・nginx open_file_cache |

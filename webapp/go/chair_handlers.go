@@ -141,7 +141,6 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	stMu.Unlock()
 
 	locBufMu.Lock()
-	locBuf = append(locBuf, locRow{ID: ulid.Make().String(), ChairID: chair.ID, Lat: req.Latitude, Lon: req.Longitude, At: now})
 	dirty[chair.ID] = struct{}{}
 	locBufMu.Unlock()
 
