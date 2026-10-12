@@ -82,3 +82,5 @@
 | 23:15 | 772715 | true | proxy_buffering を戻す（最終構成） |
 | 23:16 | 741534 | true | keepalive_timeout 300s・http2_max_concurrent_streams 512 |
 | 23:20 | 802374 | true | 全台再起動後の最終ベンチ |
+| 23:22 | 681648 | true | GET /api/app/rides をメモリから |
+| 23:24 | 780235 | true | 同上（再計測） |
