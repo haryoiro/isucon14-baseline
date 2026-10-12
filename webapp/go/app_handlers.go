@@ -14,12 +14,14 @@ import (
 )
 
 var (
-	inviteMu  sync.Mutex
-	lastRwdMs int64
+	inviteLocks sync.Map
+	rwdMu       sync.Mutex
+	lastRwdMs   int64
 )
 
-// inviteMu を保持した状態で呼ぶ
 func nextRwdMs() int64 {
+	rwdMu.Lock()
+	defer rwdMu.Unlock()
 	ms := time.Now().UnixMilli()
 	if ms <= lastRwdMs {
 		ms = lastRwdMs + 1
@@ -58,8 +60,10 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	invitationCode := secureRandomStr(15)
 
 	if req.InvitationCode != nil && *req.InvitationCode != "" {
-		inviteMu.Lock()
-		defer inviteMu.Unlock()
+		v, _ := inviteLocks.LoadOrStore(*req.InvitationCode, &sync.Mutex{})
+		m := v.(*sync.Mutex)
+		m.Lock()
+		defer m.Unlock()
 	}
 
 	tx, err := db.Beginx()

@@ -51,3 +51,5 @@
 | 22:24 | 607737 | true | upstream keepalive 1024・GOGC=200（新ベンチ） |
 | 22:25 | 651263 | true | 同上（CPU 観測） |
 | 22:27 | 599840 | true | 静的ファイルを事前 gzip（gzip_static） |
+| 22:28 | 524026 | false | 同上（slowlog） |
+| 22:30 | 594418 | true | 招待ロックを招待コード単位に |
