@@ -12,3 +12,5 @@
 - 21:44 決済を commit 後に同期実行（Idempotency-Key=ride_id でリトライ、keepalive 付き専用 http.Client）。非同期にすると CODE=34 で fail したので同期のまま → 388436
 - 21:51 ride キャッシュ（ride・fare・最新 status・椅子評価統計）で publish の DB クエリを除去 → 462086(fail: nearby CODE=30)。nearby は「MATCHING 通知前の椅子は含める」「解放後1秒は除外」でエラー解消 → 427254
 - 22:03 マッチングの urgentWait を 0/3/15 秒で比較（15s: 269k, 0: 349k, 3s: 400-466k）→ 3s。決済を commit 前に戻して owner sales の CODE=24 を解消 → 458160
+- 22:21 ベンチサーバーが c5.xlarge→c5.2xlarge に変更された（運営側のお知らせ）。以降のスコアは以前と直接比較しない
+- 22:27 新ベンチで isu1 nginx と isu2 MySQL が飽和。静的ファイルを事前 gzip して gzip_static on（nginx 195%→162%）、upstream keepalive 1024、GOGC=200 → 600k 前後
