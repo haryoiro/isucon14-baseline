@@ -78,3 +78,6 @@
 | 23:09 | 751477 | true | chair_totals の書き込みを 1 秒ごとに |
 | 23:10 | 757746 | true | 同上（slowlog） |
 | 23:12 | 727918 | true | MySQL flush_log_at_trx_commit=0・performance_schema OFF |
+| 23:13 | 695661 | true | nginx proxy_buffering off（/api/） |
+| 23:15 | 772715 | true | proxy_buffering を戻す（最終構成） |
+| 23:16 | 741534 | true | keepalive_timeout 300s・http2_max_concurrent_streams 512 |
