@@ -3,7 +3,7 @@ locals {
   #   matsuu/aws-isucon: https://github.com/matsuu/aws-isucon
   #   private-isu:       https://github.com/catatsuy/private-isu
   problems = {
-    "isucon14" = { ami = "ami-0fcf9e8e8675a9ee4", app_count = 3, app_type = "c5.large", bench_type = "c5.xlarge" }
+    "isucon14" = { ami = "ami-0fcf9e8e8675a9ee4", app_count = 3, app_type = "c5.large", bench_type = "c5.2xlarge" }
   }
   p = local.problems[var.problem]
 

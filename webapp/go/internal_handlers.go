@@ -10,10 +10,10 @@ import (
 )
 
 type matchRide struct {
-	ID      string `db:"id"`
-	PickLat int    `db:"pickup_latitude"`
-	PickLon int    `db:"pickup_longitude"`
-	DestLat int    `db:"destination_latitude"`
+	ID        string    `db:"id"`
+	PickLat   int       `db:"pickup_latitude"`
+	PickLon   int       `db:"pickup_longitude"`
+	DestLat   int       `db:"destination_latitude"`
 	DestLon   int       `db:"destination_longitude"`
 	CreatedAt time.Time `db:"created_at"`
 }
@@ -59,42 +59,30 @@ func runMatching(ctx context.Context) error {
 		ride  matchRide
 		chair *chairState
 	}
-	assigns := []assign{}
+	type freeChair struct {
+		p               *chairState
+		lat, lon, speed int
+	}
 	stMu.Lock()
-	free := []*chairState{}
+	free := []freeChair{}
 	for _, c := range chairStates {
 		if c.Active && c.RideID == "" && c.HasLoc {
-			free = append(free, c)
+			free = append(free, freeChair{c, c.Lat, c.Lon, max(c.Speed, 1)})
 		}
 	}
-	type pair struct {
-		r, c  int
-		score float64
+	stMu.Unlock()
+	if len(free) == 0 {
+		return nil
 	}
-	pairs := make([]pair, 0, len(rides)*len(free))
-	for ri, ride := range rides {
-		for ci, c := range free {
-			d := calculateDistance(c.Lat, c.Lon, ride.PickLat, ride.PickLon)
-			pairs = append(pairs, pair{ri, ci, float64(d) / float64(max(c.Speed, 1))})
-		}
-	}
-	sort.Slice(pairs, func(i, j int) bool { return pairs[i].score < pairs[j].score })
-	if time.Since(lastMatchLog) > time.Second {
-		lastMatchLog = time.Now()
-		active := 0
-		for _, c := range chairStates {
-			if c.Active {
-				active++
-			}
-		}
-		slog.Info("matching", "rides", len(rides), "free", len(free), "active", active, "chairs", len(chairStates))
-	}
+
+	chosen := make([][2]int, 0, len(free))
 	rideUsed := make([]bool, len(rides))
 	chairUsed := make([]bool, len(free))
 	now := time.Now()
 	// 長く待っているライドは古い順に最寄りの椅子を割り当てる
+	nFree := len(free)
 	for ri, ride := range rides {
-		if now.Sub(ride.CreatedAt) < urgentWait {
+		if nFree == 0 || now.Sub(ride.CreatedAt) < urgentWait {
 			break
 		}
 		best := -1
@@ -103,30 +91,54 @@ func runMatching(ctx context.Context) error {
 			if chairUsed[ci] {
 				continue
 			}
-			d := calculateDistance(c.Lat, c.Lon, ride.PickLat, ride.PickLon)
-			score := float64(d) / float64(max(c.Speed, 1))
+			score := float64(calculateDistance(c.lat, c.lon, ride.PickLat, ride.PickLon)) / float64(c.speed)
 			if best < 0 || score < bestScore {
 				best, bestScore = ci, score
 			}
 		}
-		if best < 0 {
-			break
-		}
 		rideUsed[ri], chairUsed[best] = true, true
-		c := free[best]
-		c.RideID = ride.ID
-		c.RideStatus = "MATCHING"
-		c.MatchNotified = false
-		c.PickLat, c.PickLon, c.DestLat, c.DestLon = ride.PickLat, ride.PickLon, ride.DestLat, ride.DestLon
-		assigns = append(assigns, assign{ride, c})
+		nFree--
+		chosen = append(chosen, [2]int{ri, best})
 	}
-	for _, p := range pairs {
-		if rideUsed[p.r] || chairUsed[p.c] {
+	if nFree > 0 {
+		type pair struct {
+			r, c  int
+			score float64
+		}
+		pairs := make([]pair, 0, 1024)
+		for ri, ride := range rides {
+			if rideUsed[ri] {
+				continue
+			}
+			for ci, c := range free {
+				if chairUsed[ci] {
+					continue
+				}
+				pairs = append(pairs, pair{ri, ci, float64(calculateDistance(c.lat, c.lon, ride.PickLat, ride.PickLon)) / float64(c.speed)})
+			}
+		}
+		sort.Slice(pairs, func(i, j int) bool { return pairs[i].score < pairs[j].score })
+		for _, p := range pairs {
+			if nFree == 0 {
+				break
+			}
+			if rideUsed[p.r] || chairUsed[p.c] {
+				continue
+			}
+			rideUsed[p.r], chairUsed[p.c] = true, true
+			nFree--
+			chosen = append(chosen, [2]int{p.r, p.c})
+		}
+	}
+
+	assigns := make([]assign, 0, len(chosen))
+	stMu.Lock()
+	for _, rc := range chosen {
+		ride := rides[rc[0]]
+		c := free[rc[1]].p
+		if !c.Active || c.RideID != "" {
 			continue
 		}
-		rideUsed[p.r], chairUsed[p.c] = true, true
-		ride := rides[p.r]
-		c := free[p.c]
 		c.RideID = ride.ID
 		c.RideStatus = "MATCHING"
 		c.MatchNotified = false

@@ -11,6 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
+	"time"
+	_ "net/http/pprof"
 	"strconv"
 	"syscall"
 
@@ -22,11 +25,19 @@ import (
 
 var db *sqlx.DB
 
+var (
+	coordMu   sync.Mutex
+	coordN    int
+	coordSlow int
+	coordSum  time.Duration
+)
+
 func main() {
 	mux := setup()
 	if err := loadState(context.Background()); err != nil {
 		panic(err)
 	}
+	go func() { http.ListenAndServe("127.0.0.1:6060", nil) }()
 	startFlusher()
 	startMatcher()
 	go func() {
@@ -116,7 +127,21 @@ func setup() http.Handler {
 
 		authedMux := mux.With(chairAuthMiddleware)
 		authedMux.HandleFunc("POST /api/chair/activity", chairPostActivity)
-		authedMux.HandleFunc("POST /api/chair/coordinate", chairPostCoordinate)
+		authedMux.HandleFunc("POST /api/chair/coordinate", func(w http.ResponseWriter, r *http.Request) {
+			t := time.Now()
+			chairPostCoordinate(w, r)
+			d := time.Since(t)
+			coordMu.Lock()
+			coordN++
+			coordSum += d
+			if d > time.Millisecond {
+				coordSlow++
+			}
+			if coordN%50000 == 0 {
+				slog.Info("coord", "n", coordN, "avg_us", coordSum.Microseconds()/int64(coordN), "slow", coordSlow)
+			}
+			coordMu.Unlock()
+		})
 		authedMux.HandleFunc("GET /api/chair/notification", chairGetNotification)
 		authedMux.HandleFunc("POST /api/chair/rides/{ride_id}/status", chairPostRideStatus)
 	}
