@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -98,6 +99,18 @@ func requestPaymentGatewayPostPayment(ctx context.Context, paymentGatewayURL str
 	return nil
 }
 
+var (
+	paymentStatsMu sync.Mutex
+	paymentCount   int
+	paymentRetries int
+	paymentTotal   time.Duration
+	paymentCodes   = map[int]int{}
+	paymentCodeDur = map[int]time.Duration{}
+	paymentReqDur  time.Duration
+)
+
+var paymentSem = make(chan struct{}, 10)
+
 var paymentClient = &http.Client{
 	Timeout: 10 * time.Second,
 	Transport: &http.Transport{
@@ -112,7 +125,22 @@ func paySync(paymentGatewayURL, token, rideID string, param *paymentGatewayPostP
 	if err != nil {
 		return err
 	}
+	start := time.Now()
+	defer func() {
+		paymentStatsMu.Lock()
+		paymentCount++
+		paymentTotal += time.Since(start)
+		if paymentCount%500 == 0 {
+			slog.Info("payment", "count", paymentCount, "avg_ms", paymentTotal.Milliseconds()/int64(paymentCount), "retries", paymentRetries, "codes", fmt.Sprint(paymentCodes), "durs", fmt.Sprint(paymentCodeDur), "req_avg_ms", paymentReqDur.Milliseconds()/int64(paymentCount+paymentRetries))
+		}
+		paymentStatsMu.Unlock()
+	}()
 	for i := 0; i < 1000; i++ {
+		if i > 0 {
+			paymentStatsMu.Lock()
+			paymentRetries++
+			paymentStatsMu.Unlock()
+		}
 		req, err := http.NewRequest(http.MethodPost, paymentGatewayURL+"/payments", bytes.NewBuffer(b))
 		if err != nil {
 			return err
@@ -120,10 +148,23 @@ func paySync(paymentGatewayURL, token, rideID string, param *paymentGatewayPostP
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Idempotency-Key", rideID)
+		t0 := time.Now()
 		res, err := paymentClient.Do(req)
+		paymentStatsMu.Lock()
+		if err == nil {
+			paymentCodeDur[res.StatusCode] += time.Since(t0)
+		}
+		paymentReqDur += time.Since(t0)
+		if err != nil {
+			paymentCodes[-1]++
+		}
+		paymentStatsMu.Unlock()
 		if err == nil {
 			io.Copy(io.Discard, res.Body)
 			res.Body.Close()
+			paymentStatsMu.Lock()
+			paymentCodes[res.StatusCode]++
+			paymentStatsMu.Unlock()
 			if res.StatusCode == http.StatusNoContent {
 				return nil
 			}
@@ -132,7 +173,6 @@ func paySync(paymentGatewayURL, token, rideID string, param *paymentGatewayPostP
 				return fmt.Errorf("payment failed: %d", res.StatusCode)
 			}
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 	return errors.New("payment retry exceeded")
 }

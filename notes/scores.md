@@ -39,3 +39,7 @@
 | 22:03 | 458160 | true | urgentWait 3s に戻す・決済を commit 前に（sales 整合） |
 | 22:06 | 436349 | true | owner sales をメモリから計算・username UNIQUE 削除 |
 | 22:07 | 445581 | true | chair_locations の永続化をやめる（chair_totals のみ）・nginx open_file_cache |
+| 22:09 | 455665 | true | 同上（決済計測） |
+| 22:11 | 446508 | true | 同上（決済ステータス計測） |
+| 22:12 | 295802 | true | 決済の同時実行数を 10 に制限（実験） |
+| 22:14 | 458225 | true | 決済リトライの sleep を除去 |
