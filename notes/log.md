@@ -19,3 +19,5 @@
 - 22:57 早期に全台再起動試験 → pass 678082。isuride-payment_mock が mysql を Requires していて isu1/isu3 で mysql が起動していたので payment_mock を disable
 - 23:03 nginx に multi_accept・worker_cpu_affinity・ssl_buffer_size 4k → 724977（ARRIVED→評価リクエスト到着は平均 548ms でベンチ側の挙動と判断）。その他 gzip(API)・urgent 集合割当・マッチング 50ms・待ちライドのメモリ化はいずれも誤差範囲
 - 23:06 nginx で HTTP/2 を有効化 → 815316（ベンチクライアントが h2 で多重化し、nginx の接続・TLS 負荷が下がった）
+- 23:16 以降は構成を凍結（proxy_buffering off・keepalive 延長は効果なしで戻した）。デプロイ済みバイナリが HEAD と一致することを確認
+- 23:17 全台再起動 → 前回ベンチのデータが残っていることを確認 → 23:20 最終ベンチ pass 802374（エラー 0）

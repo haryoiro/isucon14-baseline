@@ -81,3 +81,4 @@
 | 23:13 | 695661 | true | nginx proxy_buffering off（/api/） |
 | 23:15 | 772715 | true | proxy_buffering を戻す（最終構成） |
 | 23:16 | 741534 | true | keepalive_timeout 300s・http2_max_concurrent_streams 512 |
+| 23:20 | 802374 | true | 全台再起動後の最終ベンチ |
