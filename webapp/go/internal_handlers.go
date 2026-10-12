@@ -76,26 +76,36 @@ func runMatching(ctx context.Context) error {
 	rideUsed := make([]bool, len(rides))
 	chairUsed := make([]bool, len(free))
 	now := time.Now()
-	// 長く待っているライドは古い順に最寄りの椅子を割り当てる
+	// 長く待っているライドは古い順に椅子の数だけ選び、その集合の中で到着時間が短い組から割り当てる
 	nFree := len(free)
+	urgent := []int{}
 	for ri, ride := range rides {
-		if nFree == 0 || now.Sub(ride.CreatedAt) < urgentWait {
+		if len(urgent) >= nFree || now.Sub(ride.CreatedAt) < urgentWait {
 			break
 		}
-		best := -1
-		bestScore := 0.0
-		for ci, c := range free {
-			if chairUsed[ci] {
-				continue
-			}
-			score := float64(calculateDistance(c.lat, c.lon, ride.PickLat, ride.PickLon)) / float64(c.speed)
-			if best < 0 || score < bestScore {
-				best, bestScore = ci, score
+		urgent = append(urgent, ri)
+	}
+	if len(urgent) > 0 {
+		type upair struct {
+			r, c  int
+			score float64
+		}
+		ups := make([]upair, 0, len(urgent)*len(free))
+		for _, ri := range urgent {
+			ride := rides[ri]
+			for ci, c := range free {
+				ups = append(ups, upair{ri, ci, float64(calculateDistance(c.lat, c.lon, ride.PickLat, ride.PickLon)) / float64(c.speed)})
 			}
 		}
-		rideUsed[ri], chairUsed[best] = true, true
-		nFree--
-		chosen = append(chosen, [2]int{ri, best})
+		sort.Slice(ups, func(i, j int) bool { return ups[i].score < ups[j].score })
+		for _, p := range ups {
+			if rideUsed[p.r] || chairUsed[p.c] {
+				continue
+			}
+			rideUsed[p.r], chairUsed[p.c] = true, true
+			nFree--
+			chosen = append(chosen, [2]int{p.r, p.c})
+		}
 	}
 	if nFree > 0 {
 		type pair struct {
