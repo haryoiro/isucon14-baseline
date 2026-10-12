@@ -71,3 +71,4 @@
 | 22:59 | 656977 | true | nearby/rides の大きいレスポンスをアプリで gzip |
 | 23:00 | 660655 | true | urgent ライドを集合として貪欲割当 |
 | 23:02 | 636042 | true | 同上（ARRIVED→評価 計測） |
+| 23:03 | 724977 | true | nginx multi_accept・cpu_affinity・ssl_buffer_size 4k |
