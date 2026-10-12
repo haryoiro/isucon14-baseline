@@ -14,3 +14,4 @@
 - 22:03 マッチングの urgentWait を 0/3/15 秒で比較（15s: 269k, 0: 349k, 3s: 400-466k）→ 3s。決済を commit 前に戻して owner sales の CODE=24 を解消 → 458160
 - 22:21 ベンチサーバーが c5.xlarge→c5.2xlarge に変更された（運営側のお知らせ）。以降のスコアは以前と直接比較しない
 - 22:27 新ベンチで isu1 nginx と isu2 MySQL が飽和。静的ファイルを事前 gzip して gzip_static on（nginx 195%→162%）、upstream keepalive 1024、GOGC=200 → 600k 前後
+- 22:32 招待ロックを招待コード単位に（グローバル mutex で登録が 10s タイムアウトする事象）。ride_statuses を非同期バッチ化、chair の status 更新をメモリで検証、owner キャッシュ → 593k（エラー 0）

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 )
 
 type chairState struct {
@@ -121,13 +123,46 @@ func resetLocBuf() {
 	locBufMu.Lock()
 	locBuf = nil
 	dirty = map[string]struct{}{}
+	statusBuf = nil
 	locBufMu.Unlock()
+}
+
+type statusRow struct {
+	ID, RideID, Status string
+	At                 time.Time
+}
+
+var statusBuf []statusRow
+
+func enqueueStatus(rideID, status string) {
+	locBufMu.Lock()
+	statusBuf = append(statusBuf, statusRow{ulid.Make().String(), rideID, status, time.Now().Truncate(time.Microsecond)})
+	locBufMu.Unlock()
+}
+
+func flushStatuses(ctx context.Context, buf []statusRow) {
+	for i := 0; i < len(buf); i += 500 {
+		end := min(i+500, len(buf))
+		var sb strings.Builder
+		args := make([]any, 0, (end-i)*4)
+		sb.WriteString("INSERT INTO ride_statuses (id, ride_id, status, created_at) VALUES ")
+		for j, r := range buf[i:end] {
+			if j > 0 {
+				sb.WriteString(",")
+			}
+			sb.WriteString("(?,?,?,?)")
+			args = append(args, r.ID, r.RideID, r.Status, r.At)
+		}
+		if _, err := db.ExecContext(ctx, sb.String(), args...); err != nil {
+			slog.Error("flush ride_statuses", "err", err)
+		}
+	}
 }
 
 func startFlusher() {
 	go func() {
 		for {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 			flushLocations()
 		}
 	}()
@@ -139,16 +174,19 @@ func flushLocations() {
 	flushMu.Lock()
 	defer flushMu.Unlock()
 	locBufMu.Lock()
-	buf := locBuf
 	d := dirty
+	sbuf := statusBuf
 	locBuf = nil
+	statusBuf = nil
 	dirty = map[string]struct{}{}
 	locBufMu.Unlock()
-	_ = buf
+	ctx := context.Background()
+	if len(sbuf) > 0 {
+		flushStatuses(ctx, sbuf)
+	}
 	if len(d) == 0 {
 		return
 	}
-	ctx := context.Background()
 	var sb strings.Builder
 	args := []any{}
 	sb.WriteString("INSERT INTO chair_totals (chair_id, total_distance, total_distance_updated_at, latitude, longitude) VALUES ")

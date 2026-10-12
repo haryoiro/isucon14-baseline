@@ -278,10 +278,16 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 		item.Chair.Name = chair.Name
 		item.Chair.Model = chair.Model
 
-		owner := &Owner{}
-		if err := tx.GetContext(ctx, owner, `SELECT * FROM owners WHERE id = ?`, chair.OwnerID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+		var owner *Owner
+		if v, ok := ownerByID.Load(chair.OwnerID); ok {
+			owner = v.(*Owner)
+		} else {
+			owner = &Owner{}
+			if err := tx.GetContext(ctx, owner, `SELECT * FROM owners WHERE id = ?`, chair.OwnerID); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			ownerByID.Store(chair.OwnerID, owner)
 		}
 		item.Chair.Owner = owner.Name
 
@@ -367,14 +373,6 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
-		ulid.Make().String(), rideID, "MATCHING",
-	); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 
 	var rideCount int
 	if err := tx.GetContext(ctx, &rideCount, `SELECT COUNT(*) FROM rides WHERE user_id = ? `, user.ID); err != nil {
@@ -452,6 +450,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	enqueueStatus(rideID, "MATCHING")
 	cacheNewRide(ride, fare)
 	publishRide(ctx, rideID, "MATCHING", true, false)
 
@@ -585,14 +584,6 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = tx.ExecContext(
-		ctx,
-		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
-		ulid.Make().String(), rideID, "COMPLETED")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -636,6 +627,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	enqueueStatus(rideID, "COMPLETED")
 	cacheComplete(*ride)
 	publishRide(ctx, rideID, "COMPLETED", true, true)
 

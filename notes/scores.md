@@ -53,3 +53,4 @@
 | 22:27 | 599840 | true | 静的ファイルを事前 gzip（gzip_static） |
 | 22:28 | 524026 | false | 同上（slowlog） |
 | 22:30 | 594418 | true | 招待ロックを招待コード単位に |
+| 22:32 | 593154 | true | ride_statuses を非同期バッチ書き込み・status 更新をメモリで検証・owner キャッシュ |

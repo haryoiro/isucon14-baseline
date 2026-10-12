@@ -255,11 +255,12 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 
 // キャッシュ（不変なデータのみ）
 var (
-	chairByID   sync.Map
-	chairByTok  sync.Map
-	userByID    sync.Map
-	userByTok   sync.Map
-	ownerByTok  sync.Map
+	chairByID  sync.Map
+	chairByTok sync.Map
+	userByID   sync.Map
+	userByTok  sync.Map
+	ownerByTok sync.Map
+	ownerByID  sync.Map
 )
 
 func getChairByID(ctx context.Context, id string) (*Chair, error) {
@@ -287,7 +288,7 @@ func getUserByID(ctx context.Context, id string) (*User, error) {
 }
 
 func clearCaches() {
-	for _, m := range []*sync.Map{&chairByID, &chairByTok, &userByID, &userByTok, &ownerByTok, &pendingComplete} {
+	for _, m := range []*sync.Map{&chairByID, &chairByTok, &userByID, &userByTok, &ownerByTok, &ownerByID, &pendingComplete} {
 		m.Range(func(k, _ any) bool { m.Delete(k); return true })
 	}
 }
