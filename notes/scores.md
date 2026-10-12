@@ -64,3 +64,6 @@
 | 22:46 | 666201 | true | isu1 TLS 終端に戻す（access log off） |
 | 22:47 | 681384 | true | マッチング間隔 50ms |
 | 22:49 | 665381 | true | 待ちライドをメモリから取得 |
+| 22:50 | 648398 | true | urgentWait 5s |
+| 22:51 | 631589 | true | urgentWait 2s |
+| 22:53 | 624382 | true | nginx KTLS |
