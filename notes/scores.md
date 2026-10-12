@@ -29,3 +29,4 @@
 | 21:48 | 462086 | false | ride キャッシュ（ride・fare・status・椅子評価統計をメモリ化） |
 | 21:49 | 475250 | false | nearby: MATCHING 通知送信前の椅子のみ含める |
 | 21:51 | 427254 | true | nearby: 解放後1秒は除外 |
+| 21:53 | 353465 | true | 招待登録の FOR UPDATE をアプリ内 mutex に（deadlock 解消） |

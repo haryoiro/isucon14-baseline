@@ -4,12 +4,29 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 )
+
+var (
+	inviteMu  sync.Mutex
+	lastRwdMs int64
+)
+
+// inviteMu を保持した状態で呼ぶ
+func nextRwdMs() int64 {
+	ms := time.Now().UnixMilli()
+	if ms <= lastRwdMs {
+		ms = lastRwdMs + 1
+	}
+	lastRwdMs = ms
+	return ms
+}
 
 type appPostUsersRequest struct {
 	Username       string  `json:"username"`
@@ -39,6 +56,11 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	userID := ulid.Make().String()
 	accessToken := secureRandomStr(32)
 	invitationCode := secureRandomStr(15)
+
+	if req.InvitationCode != nil && *req.InvitationCode != "" {
+		inviteMu.Lock()
+		defer inviteMu.Unlock()
+	}
 
 	tx, err := db.Beginx()
 	if err != nil {
@@ -72,7 +94,7 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	if req.InvitationCode != nil && *req.InvitationCode != "" {
 		// 招待する側の招待数をチェック
 		var coupons []Coupon
-		err = tx.SelectContext(ctx, &coupons, "SELECT * FROM coupons WHERE code = ? FOR UPDATE", "INV_"+*req.InvitationCode)
+		err = tx.SelectContext(ctx, &coupons, "SELECT * FROM coupons WHERE code = ?", "INV_"+*req.InvitationCode)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -107,8 +129,8 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 		// 招待した人にもRewardを付与
 		_, err = tx.ExecContext(
 			ctx,
-			"INSERT INTO coupons (user_id, code, discount) VALUES (?, CONCAT(?, '_', FLOOR(UNIX_TIMESTAMP(NOW(3))*1000)), ?)",
-			inviter.ID, "RWD_"+*req.InvitationCode, 1000,
+			"INSERT INTO coupons (user_id, code, discount) VALUES (?, ?, ?)",
+			inviter.ID, fmt.Sprintf("RWD_%s_%d", *req.InvitationCode, nextRwdMs()), 1000,
 		)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
