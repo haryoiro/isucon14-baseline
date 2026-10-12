@@ -1,52 +1,70 @@
 package main
 
 import (
-	"database/sql"
-	"errors"
 	"net/http"
 )
+
+type matchRide struct {
+	ID        string `db:"id"`
+	Latitude  int    `db:"pickup_latitude"`
+	Longitude int    `db:"pickup_longitude"`
+}
+
+type matchChair struct {
+	ID        string `db:"id"`
+	Speed     int    `db:"speed"`
+	Latitude  int    `db:"latitude"`
+	Longitude int    `db:"longitude"`
+}
 
 // このAPIをインスタンス内から一定間隔で叩かせることで、椅子とライドをマッチングさせる
 func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
-	ride := &Ride{}
-	if err := db.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at LIMIT 1`); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
+	rides := []matchRide{}
+	if err := db.SelectContext(ctx, &rides, `SELECT id, pickup_latitude, pickup_longitude FROM rides WHERE chair_id IS NULL ORDER BY created_at`); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-
-	matched := &Chair{}
-	empty := false
-	for i := 0; i < 10; i++ {
-		if err := db.GetContext(ctx, matched, "SELECT * FROM chairs INNER JOIN (SELECT id FROM chairs WHERE is_active = TRUE ORDER BY RAND() LIMIT 1) AS tmp ON chairs.id = tmp.id LIMIT 1"); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			writeError(w, http.StatusInternalServerError, err)
-		}
-
-		if err := db.GetContext(ctx, &empty, "SELECT COUNT(*) = 0 FROM (SELECT COUNT(chair_sent_at) = 6 AS completed FROM ride_statuses WHERE ride_id IN (SELECT id FROM rides WHERE chair_id = ?) GROUP BY ride_id) is_completed WHERE completed = FALSE", matched.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if empty {
-			break
-		}
-	}
-	if !empty {
+	if len(rides) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-
-	if _, err := db.ExecContext(ctx, "UPDATE rides SET chair_id = ? WHERE id = ?", matched.ID, ride.ID); err != nil {
+	// 空いている椅子: アクティブで、割り当て済みライドがすべて COMPLETED を椅子に通知済み
+	chairs := []matchChair{}
+	if err := db.SelectContext(ctx, &chairs, `SELECT c.id, m.speed, t.latitude, t.longitude
+		FROM chairs c JOIN chair_models m ON m.name = c.model JOIN chair_totals t ON t.chair_id = c.id
+		WHERE c.is_active = TRUE AND NOT EXISTS (
+			SELECT 1 FROM rides r WHERE r.chair_id = c.id AND NOT EXISTS (
+				SELECT 1 FROM ride_statuses rs WHERE rs.ride_id = r.id AND rs.status = 'COMPLETED' AND rs.chair_sent_at IS NOT NULL))`); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	used := make([]bool, len(chairs))
+	for _, ride := range rides {
+		best := -1
+		bestScore := 0.0
+		for i, c := range chairs {
+			if used[i] {
+				continue
+			}
+			d := calculateDistance(c.Latitude, c.Longitude, ride.Latitude, ride.Longitude)
+			score := float64(d) / float64(c.Speed)
+			if best < 0 || score < bestScore {
+				best = i
+				bestScore = score
+			}
+		}
+		if best < 0 {
+			break
+		}
+		res, err := db.ExecContext(ctx, "UPDATE rides SET chair_id = ? WHERE id = ? AND chair_id IS NULL", chairs[best].ID, ride.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 1 {
+			used[best] = true
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

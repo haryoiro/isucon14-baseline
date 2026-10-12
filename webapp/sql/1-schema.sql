@@ -140,3 +140,14 @@ ALTER TABLE chair_locations ADD INDEX idx_chair_created (chair_id, created_at);
 ALTER TABLE rides ADD INDEX idx_user_created (user_id, created_at), ADD INDEX idx_chair_updated (chair_id, updated_at);
 ALTER TABLE ride_statuses ADD INDEX idx_ride_created (ride_id, created_at);
 ALTER TABLE coupons ADD INDEX idx_used_by (used_by), ADD INDEX idx_code (code);
+
+DROP TABLE IF EXISTS chair_totals;
+CREATE TABLE chair_totals
+(
+  chair_id                  VARCHAR(26) NOT NULL,
+  total_distance            INTEGER     NOT NULL DEFAULT 0,
+  total_distance_updated_at DATETIME(6) NOT NULL,
+  latitude                  INTEGER     NOT NULL,
+  longitude                 INTEGER     NOT NULL,
+  PRIMARY KEY (chair_id)
+);
