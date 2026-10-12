@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "deny": [
+      "WebSearch",
+      "WebFetch",
+      "Bash(aws *)",
+      "Bash(terraform *)",
+      "Bash(gh *)",
+      "Read(infra/**)",
+      "Read(~/workspace/github.com/haryoiro/isucon-spoilers/**)",
+      "Read(~/workspace/github.com/haryoiro/isucon-suburi/**)",
+      "Read(~/workspace/github.com/haryoiro/isucon-template/**)",
+      "Read(~/workspace/github.com/haryoiro/isucon-template-go-skill/**)",
+      "Read(~/workspace/github.com/haryoiro/isucon-tooling-lab/**)",
+      "Read(~/workspace/github.com/haryoiro/isuspan/**)",
+      "Read(~/.claude/projects/**)",
+      "Grep(~/workspace/github.com/haryoiro/isucon-*/**)",
+      "Glob(~/workspace/github.com/haryoiro/isucon-*/**)"
+    ]
+  }
+}
